@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Irina Labs · Lluvias y aplicaciones</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="hero">
+    <div class="brand">
+      <img src="assets/logo-bayer.jpg" alt="Logo Bayer" />
+      <div>
+        <p class="eyebrow">Irina Labs</p>
+        <h1>Lluvias, aplicaciones y assessments</h1>
+        <p class="subtitle">Pegá tu tabla, recortá cada localidad desde la lluvia previa a la primera aplicación hasta la lluvia posterior a la última aplicación, y generá gráficos listos para descargar.</p>
+      </div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="card input-card">
+      <div class="section-title">
+        <span>01</span>
+        <div>
+          <h2>Ingresar datos</h2>
+          <p>Copiá y pegá desde Excel o Spotfire. La app reconoce separadores por tabulación, coma o punto y coma.</p>
+        </div>
+      </div>
+
+      <div class="expected">
+        <strong>Columnas esperadas:</strong>
+        <code>Trial_mod</code>
+        <code>activity_date</code>
+        <code>activity_description</code>
+        <code>activity_timing_code</code>
+        <code>Avg(irrigation_amount)</code>
+      </div>
+
+      <textarea id="dataInput" spellcheck="false" placeholder="Pegá acá tu tabla completa, incluyendo encabezados..."></textarea>
+
+      <div class="actions">
+        <button id="processBtn" class="primary">Procesar tabla</button>
+        <button id="clearBtn" class="secondary">Limpiar</button>
+        <button id="loadDemoBtn" class="ghost">Cargar ejemplo mínimo</button>
+      </div>
+      <p id="status" class="status"></p>
+    </section>
+
+    <section class="card output-card">
+      <div class="section-title">
+        <span>02</span>
+        <div>
+          <h2>Resultado filtrado</h2>
+          <p>Tabla final por localidad con todos los eventos dentro de la ventana definida.</p>
+        </div>
+      </div>
+      <div class="toolbar">
+        <button id="downloadCsvBtn" class="secondary" disabled>Descargar CSV filtrado</button>
+      </div>
+      <div id="summary" class="summary-grid"></div>
+      <div class="table-wrap">
+        <table id="resultTable"></table>
+      </div>
+    </section>
+
+    <section class="card chart-card">
+      <div class="section-title">
+        <span>03</span>
+        <div>
+          <h2>Gráficos por localidad</h2>
+          <p>Barras de precipitación, líneas continuas para aplicaciones y líneas punteadas para assessments.</p>
+        </div>
+      </div>
+      <div id="charts" class="charts"></div>
+    </section>
+  </main>
+
+  <footer>
+    <span>Irina Labs · Bayer style · Local browser tool</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
