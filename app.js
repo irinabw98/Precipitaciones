@@ -1,4 +1,5 @@
 const REQUIRED = {
+  protocol: ["protocolo", "protocol", "protocol_mod"],
   locality: ["trial_mod", "localidad", "trial"],
   date: ["activity_date", "fecha", "date"],
   description: ["activity_description", "activity description", "descripcion", "descripción"],
@@ -7,12 +8,12 @@ const REQUIRED = {
 };
 
 const COLORS = {
-  green: "#66B512",
-  blue: "#00A3E0",
-  navy: "#003B71",
+  bayerGreen: "#66B512",
+  bayerBlue: "#00A3E0",
+  bayerNavy: "#003B71",
   gray: "#64748B",
-  light: "#E8F7FC",
-  grid: "#D9ECF4"
+  grid: "#D9ECF4",
+  appFill: "#DDF3D0"
 };
 
 let filteredRows = [];
@@ -27,13 +28,13 @@ const els = {
   resultTable: document.getElementById("resultTable"),
   summary: document.getElementById("summary"),
   charts: document.getElementById("charts"),
-  downloadCsvBtn: document.getElementById("downloadCsvBtn")
+  downloadXlsBtn: document.getElementById("downloadXlsBtn")
 };
 
 els.processBtn.addEventListener("click", processInput);
 els.clearBtn.addEventListener("click", clearAll);
 els.loadDemoBtn.addEventListener("click", loadDemo);
-els.downloadCsvBtn.addEventListener("click", () => downloadCsv(filteredRows));
+els.downloadXlsBtn.addEventListener("click", () => downloadExcel(filteredRows));
 
 function normalizeHeader(value) {
   return String(value || "").trim().toLowerCase().replace(/\s+/g, "_");
@@ -128,19 +129,22 @@ function processInput() {
     const matrix = parseDelimited(els.dataInput.value);
     const headers = matrix[0];
     const idx = {
+      protocol: findColumn(headers, REQUIRED.protocol),
       locality: findColumn(headers, REQUIRED.locality),
       date: findColumn(headers, REQUIRED.date),
       description: findColumn(headers, REQUIRED.description),
       code: findColumn(headers, REQUIRED.code),
       irrigation: findColumn(headers, REQUIRED.irrigation)
     };
-    const missing = Object.entries(idx).filter(([, v]) => v === -1).map(([k]) => k);
+    const requiredKeys = ["locality", "date", "description", "code", "irrigation"];
+    const missing = requiredKeys.filter(k => idx[k] === -1);
     if (missing.length) throw new Error("No pude reconocer estas columnas: " + missing.join(", "));
 
     const rows = matrix.slice(1).map((r, i) => {
       const date = parseDateValue(r[idx.date]);
       const type = typeOfRow(r[idx.description]);
       return {
+        protocol: idx.protocol === -1 ? "" : (r[idx.protocol] || ""),
         locality: r[idx.locality] || "Sin localidad",
         date,
         dateLabel: formatDate(date),
@@ -154,14 +158,14 @@ function processInput() {
 
     groupedResult = buildWindows(rows);
     filteredRows = Array.from(groupedResult.values()).flat();
-    renderSummary(rows, groupedResult, filteredRows);
+    renderSummary(groupedResult, filteredRows);
     renderTable(filteredRows);
     renderCharts(groupedResult);
-    els.downloadCsvBtn.disabled = filteredRows.length === 0;
+    els.downloadXlsBtn.disabled = filteredRows.length === 0;
     els.status.textContent = `Listo: ${filteredRows.length} filas filtradas en ${groupedResult.size} localidades.`;
   } catch (err) {
     els.status.textContent = err.message;
-    els.downloadCsvBtn.disabled = true;
+    els.downloadXlsBtn.disabled = true;
   }
 }
 
@@ -173,11 +177,12 @@ function cleanCode(value) {
 function buildWindows(rows) {
   const byLocality = new Map();
   rows.forEach(r => {
-    if (!byLocality.has(r.locality)) byLocality.set(r.locality, []);
-    byLocality.get(r.locality).push(r);
+    const key = `${r.protocol}||${r.locality}`;
+    if (!byLocality.has(key)) byLocality.set(key, []);
+    byLocality.get(key).push(r);
   });
   const result = new Map();
-  for (const [locality, items] of byLocality.entries()) {
+  for (const [key, items] of byLocality.entries()) {
     const sorted = [...items].sort((a, b) => a.date - b.date || a.originalIndex - b.originalIndex);
     const applications = sorted.filter(r => r.type === "Application");
     if (!applications.length) continue;
@@ -199,12 +204,12 @@ function buildWindows(rows) {
         break;
       }
     }
-    result.set(locality, sorted.slice(startIndex, endIndex + 1));
+    result.set(key, sorted.slice(startIndex, endIndex + 1));
   }
   return result;
 }
 
-function renderSummary(allRows, groups, rows) {
+function renderSummary(groups, rows) {
   const applications = rows.filter(r => r.type === "Application").length;
   const assessments = rows.filter(r => r.type === "Assessment").length;
   const rainMm = rows.reduce((sum, r) => sum + (r.type === "Rain" && r.irrigation ? r.irrigation : 0), 0);
@@ -222,9 +227,10 @@ function renderTable(rows) {
     els.resultTable.innerHTML = "";
     return;
   }
-  const head = ["Localidad", "Fecha", "Activity description", "Activity code", "Irrigation / lluvia (mm)"];
+  const head = ["Protocolo", "Localidad", "Fecha", "Activity description", "Activity code", "Irrigation / lluvia (mm)"];
   const body = rows.map(r => `
-    <tr>
+    <tr class="${r.type === "Application" ? "app-row" : ""}">
+      <td>${escapeHtml(r.protocol)}</td>
       <td>${escapeHtml(r.locality)}</td>
       <td>${escapeHtml(r.dateLabel)}</td>
       <td>${escapeHtml(r.description)}</td>
@@ -237,27 +243,30 @@ function renderTable(rows) {
 
 function renderCharts(groups) {
   els.charts.innerHTML = "";
-  for (const [locality, rows] of groups.entries()) {
+  for (const [key, rows] of groups.entries()) {
+    const locality = rows[0]?.locality || key.split("||")[1] || key;
+    const protocol = rows[0]?.protocol || "";
+    const title = protocol ? `${protocol} · ${locality}` : locality;
     const box = document.createElement("div");
     box.className = "chart-box";
     box.innerHTML = `
       <div class="chart-head">
-        <h3>${escapeHtml(locality)}</h3>
-        <button class="secondary">Descargar PNG</button>
+        <h3>${escapeHtml(title)}</h3>
+        <button class="secondary">Descargar PNG Bayer</button>
       </div>
       <canvas></canvas>
     `;
     els.charts.appendChild(box);
     const canvas = box.querySelector("canvas");
-    drawChart(canvas, locality, rows);
-    box.querySelector("button").addEventListener("click", () => downloadCanvas(canvas, `grafico_${safeFile(locality)}.png`));
+    drawChart(canvas, title, rows);
+    box.querySelector("button").addEventListener("click", () => downloadCanvas(canvas, `grafico_${safeFile(title)}.png`));
   }
 }
 
-function drawChart(canvas, locality, rows) {
+function drawChart(canvas, title, rows) {
   const dpr = window.devicePixelRatio || 1;
   const cssWidth = canvas.clientWidth || 980;
-  const cssHeight = canvas.clientHeight || 430;
+  const cssHeight = canvas.clientHeight || 460;
   canvas.width = cssWidth * dpr;
   canvas.height = cssHeight * dpr;
   const ctx = canvas.getContext("2d");
@@ -265,14 +274,14 @@ function drawChart(canvas, locality, rows) {
 
   const W = cssWidth;
   const H = cssHeight;
-  const m = { left: 62, right: 28, top: 42, bottom: 72 };
+  const m = { left: 82, right: 38, top: 46, bottom: 84 };
   const plotW = W - m.left - m.right;
   const plotH = H - m.top - m.bottom;
   const minT = Math.min(...rows.map(r => r.date.getTime()));
   const maxT = Math.max(...rows.map(r => r.date.getTime()));
   const span = Math.max(maxT - minT, 86400000);
   const rains = rows.filter(r => r.type === "Rain" && Number.isFinite(r.irrigation));
-  const maxY = Math.max(10, ...rains.map(r => r.irrigation)) * 1.22;
+  const maxY = Math.max(10, ...rains.map(r => r.irrigation)) * 1.24;
   const x = date => m.left + ((date.getTime() - minT) / span) * plotW;
   const y = v => m.top + plotH - (v / maxY) * plotH;
 
@@ -280,9 +289,11 @@ function drawChart(canvas, locality, rows) {
   ctx.fillStyle = "#FFFFFF";
   ctx.fillRect(0, 0, W, H);
 
-  ctx.fillStyle = COLORS.navy;
+  ctx.fillStyle = COLORS.bayerNavy;
   ctx.font = "800 18px Inter, Arial";
-  ctx.fillText(locality, m.left, 26);
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText(title, m.left, 28);
 
   ctx.strokeStyle = COLORS.grid;
   ctx.lineWidth = 1;
@@ -298,10 +309,19 @@ function drawChart(canvas, locality, rows) {
     ctx.moveTo(m.left, yy);
     ctx.lineTo(W - m.right, yy);
     ctx.stroke();
-    ctx.fillText(round(val, 0), m.left - 9, yy);
+    ctx.fillText(round(val, 0), m.left - 10, yy);
   }
 
-  ctx.strokeStyle = COLORS.navy;
+  ctx.save();
+  ctx.translate(22, m.top + plotH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillStyle = COLORS.bayerNavy;
+  ctx.font = "800 12px Inter, Arial";
+  ctx.textAlign = "center";
+  ctx.fillText("Precipitación / irrigación (mm)", 0, 0);
+  ctx.restore();
+
+  ctx.strokeStyle = COLORS.bayerNavy;
   ctx.lineWidth = 1.3;
   ctx.beginPath();
   ctx.moveTo(m.left, m.top);
@@ -309,34 +329,39 @@ function drawChart(canvas, locality, rows) {
   ctx.lineTo(W - m.right, m.top + plotH);
   ctx.stroke();
 
-  const barWidth = Math.max(5, Math.min(24, plotW / Math.max(rains.length, 12) * 0.62));
-  rains.forEach(r => {
+  const minSpacing = getMinSpacing(rains.map(r => x(r.date)));
+  const barWidth = Math.max(5, Math.min(16, minSpacing * 0.45, plotW / Math.max(rains.length, 18) * 0.55));
+  rains.forEach((r, i) => {
     const xx = x(r.date) - barWidth / 2;
     const yy = y(r.irrigation);
     const h = m.top + plotH - yy;
-    const grad = ctx.createLinearGradient(0, yy, 0, m.top + plotH);
-    grad.addColorStop(0, COLORS.blue);
-    grad.addColorStop(1, "#BFEFFF");
-    ctx.fillStyle = grad;
-    roundRect(ctx, xx, yy, barWidth, h, 6);
+    ctx.fillStyle = COLORS.bayerBlue;
+    roundRect(ctx, xx, yy, barWidth, h, Math.min(5, barWidth / 2));
     ctx.fill();
-    ctx.fillStyle = COLORS.navy;
+    ctx.fillStyle = COLORS.bayerNavy;
     ctx.font = "800 11px Inter, Arial";
     ctx.textAlign = "center";
     ctx.textBaseline = "bottom";
-    ctx.fillText(`${round(r.irrigation, 1)} mm`, x(r.date), yy - 4);
+    ctx.fillText(`${round(r.irrigation, 1)}`, x(r.date), yy - 5 - (i % 2) * 10);
   });
 
-  rows.filter(r => r.type === "Application").forEach((r, i) => drawVerticalEvent(ctx, x(r.date), m, plotH, COLORS.green, false, `Aplic. ${r.code || i + 1}`, i));
-  rows.filter(r => r.type === "Assessment").forEach((r, i) => drawVerticalEvent(ctx, x(r.date), m, plotH, COLORS.navy, true, r.code || "Assessment", i));
+  rows.filter(r => r.type === "Application").forEach((r, i) => drawVerticalEvent(ctx, x(r.date), m, plotH, COLORS.bayerGreen, false, `Aplic. ${r.code || i + 1}`, i));
+  rows.filter(r => r.type === "Assessment").forEach((r, i) => drawVerticalEvent(ctx, x(r.date), m, plotH, COLORS.bayerNavy, true, r.code || "Assessment", i));
 
-  drawDateTicks(ctx, rows, x, m, plotH, W);
+  drawDateTicks(ctx, rows, x, m, plotH);
 
-  ctx.textAlign = "left";
-  ctx.textBaseline = "middle";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
   ctx.font = "12px Inter, Arial";
   ctx.fillStyle = COLORS.gray;
-  ctx.fillText("Precipitación / irrigación (mm)", m.left, H - 18);
+  ctx.fillText("Fecha", m.left + plotW / 2, H - 22);
+}
+
+function getMinSpacing(values) {
+  const sorted = [...values].sort((a, b) => a - b);
+  let min = Infinity;
+  for (let i = 1; i < sorted.length; i++) min = Math.min(min, sorted[i] - sorted[i - 1]);
+  return Number.isFinite(min) && min > 0 ? min : 42;
 }
 
 function drawVerticalEvent(ctx, xx, m, plotH, color, dashed, label, index) {
@@ -350,8 +375,8 @@ function drawVerticalEvent(ctx, xx, m, plotH, color, dashed, label, index) {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  const offset = (index % 4) * 18;
-  ctx.translate(xx + 5, m.top + 18 + offset);
+  const offset = (index % 5) * 18;
+  ctx.translate(xx + 5, m.top + 22 + offset);
   ctx.rotate(-Math.PI / 2);
   ctx.fillStyle = color;
   ctx.font = dashed ? "700 11px Inter, Arial" : "900 12px Inter, Arial";
@@ -368,24 +393,21 @@ function drawDateTicks(ctx, rows, x, m, plotH) {
     const key = r.date.toISOString().slice(0, 10);
     if (!seen.has(key)) { seen.add(key); unique.push(r.date); }
   });
-  const maxTicks = 10;
+  const maxTicks = Math.max(8, Math.floor((m.left + (x(unique.at(-1) || new Date()) - m.left)) / 82));
   const step = Math.max(1, Math.ceil(unique.length / maxTicks));
   ctx.fillStyle = COLORS.gray;
   ctx.strokeStyle = COLORS.grid;
-  ctx.font = "11px Inter, Arial";
-  ctx.textAlign = "right";
-  ctx.textBaseline = "middle";
-  unique.filter((_, i) => i % step === 0 || i === unique.length - 1).forEach(date => {
+  ctx.font = "10.5px Inter, Arial";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  unique.filter((_, i) => i % step === 0 || i === unique.length - 1).forEach((date, i) => {
     const xx = x(date);
     ctx.beginPath();
     ctx.moveTo(xx, m.top + plotH);
     ctx.lineTo(xx, m.top + plotH + 6);
     ctx.stroke();
-    ctx.save();
-    ctx.translate(xx - 4, m.top + plotH + 47);
-    ctx.rotate(-Math.PI / 4);
-    ctx.fillText(formatDate(date), 0, 0);
-    ctx.restore();
+    const yLabel = m.top + plotH + 12 + (i % 2) * 18;
+    ctx.fillText(formatDate(date), xx, yLabel);
   });
 }
 
@@ -396,7 +418,7 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.arcTo(x + w, y, x + w, y + h, radius);
   ctx.arcTo(x + w, y + h, x, y + h, radius);
   ctx.arcTo(x, y + h, x, y, radius);
-  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.arcTo(x, y, x + radius, y, radius);
   ctx.closePath();
 }
 
@@ -407,27 +429,50 @@ function downloadCanvas(canvas, filename) {
   a.click();
 }
 
-function downloadCsv(rows) {
-  const header = ["Trial_mod", "activity_date", "activity_description", "activity_timing_code", "Avg(irrigation_amount)"];
-  const lines = [header.join(";")].concat(rows.map(r => [
-    r.locality,
-    r.dateLabel,
-    r.description,
-    r.code,
-    r.irrigation ?? ""
-  ].map(csvCell).join(";")));
-  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+function downloadExcel(rows) {
+  const html = buildExcelHtml(rows);
+  const blob = new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "lluvias_aplicaciones_filtrado.csv";
+  a.download = "lluvias_aplicaciones_filtrado.xls";
   a.click();
   URL.revokeObjectURL(url);
 }
 
-function csvCell(value) {
-  const text = String(value ?? "");
-  return /[;"\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+function buildExcelHtml(rows) {
+  const groups = [];
+  let i = 0;
+  while (i < rows.length) {
+    const start = i;
+    const locality = rows[i].locality;
+    while (i < rows.length && rows[i].locality === locality) i++;
+    groups.push({ start, end: i, size: i - start });
+  }
+  let groupByStart = new Map(groups.map(g => [g.start, g]));
+  const body = rows.map((r, idx) => {
+    const g = groupByStart.get(idx);
+    const localityCell = g ? `<td rowspan="${g.size}" class="merged">${escapeHtml(r.locality)}</td>` : "";
+    const cls = r.type === "Application" ? " class='application'" : "";
+    return `<tr${cls}>
+      <td>${escapeHtml(r.protocol)}</td>
+      ${localityCell}
+      <td>${escapeHtml(r.dateLabel)}</td>
+      <td>${escapeHtml(r.description)}</td>
+      <td>${escapeHtml(r.code)}</td>
+      <td>${r.irrigation ?? ""}</td>
+    </tr>`;
+  }).join("");
+  return `<!doctype html><html><head><meta charset="UTF-8"><style>
+    table{border-collapse:collapse;font-family:Arial,sans-serif;font-size:11pt;}
+    th{background:#003B71;color:white;font-weight:700;border:1px solid #8bb8d2;padding:7px;text-align:left;}
+    td{border:1px solid #c9dce8;padding:6px;vertical-align:middle;}
+    .application td,.application{background:#DDF3D0;}
+    .merged{font-weight:700;background:#F3F9FC;}
+  </style></head><body><table>
+    <thead><tr><th>Protocolo</th><th>Trial_mod</th><th>Activity_date</th><th>Activity description</th><th>Activity code</th><th>Avg(irrigation_amount)</th></tr></thead>
+    <tbody>${body}</tbody>
+  </table></body></html>`;
 }
 
 function clearAll() {
@@ -436,13 +481,13 @@ function clearAll() {
   els.resultTable.innerHTML = "";
   els.summary.innerHTML = "";
   els.charts.innerHTML = "";
-  els.downloadCsvBtn.disabled = true;
+  els.downloadXlsBtn.disabled = true;
   filteredRows = [];
   groupedResult = new Map();
 }
 
 function loadDemo() {
-  els.dataInput.value = `Trial_mod\tactivity_date\tactivity_description\tactivity_timing_code\tAvg(irrigation_amount)\nCG01-Corralito\t45968\tRain\t(Empty)\t26\nCG01-Corralito\t45970\tApplication\tA\t\nCG01-Corralito\t45973\tRain\t(Empty)\t4\nCG01-Corralito\t45993\tAssessment\tA1\t\nCG01-Corralito\t46000\tAssessment\tA2\t\nCG01-Corralito\t46021\tApplication\tB\t\nCG01-Corralito\t46023\tRain\t(Empty)\t9\nCG02-Pergamino\t45970\tRain\t(Empty)\t12\nCG02-Pergamino\t45971\tApplication\tA\t\nCG02-Pergamino\t45978\tAssessment\tA1\t\nCG02-Pergamino\t45980\tApplication\tC\t\nCG02-Pergamino\t45985\tRain\t(Empty)\t18`;
+  els.dataInput.value = `protocolo\tTrial_mod\tactivity_date\tactivity_description\tactivity_timing_code\tAvg(irrigation_amount)\nHP26ARGC01\tCG01-Corralito\t45968\tRain\t(Empty)\t26\nHP26ARGC01\tCG01-Corralito\t45970\tApplication\tA\t\nHP26ARGC01\tCG01-Corralito\t45973\tRain\t(Empty)\t4\nHP26ARGC01\tCG01-Corralito\t45993\tAssessment\tA1\t\nHP26ARGC01\tCG01-Corralito\t46000\tAssessment\tA2\t\nHP26ARGC01\tCG01-Corralito\t46021\tApplication\tB\t\nHP26ARGC01\tCG01-Corralito\t46023\tRain\t(Empty)\t9\nHP26ARGC02\tCG02-Pergamino\t45970\tRain\t(Empty)\t12\nHP26ARGC02\tCG02-Pergamino\t45971\tApplication\tA\t\nHP26ARGC02\tCG02-Pergamino\t45978\tAssessment\tA1\t\nHP26ARGC02\tCG02-Pergamino\t45980\tApplication\tC\t\nHP26ARGC02\tCG02-Pergamino\t45985\tRain\t(Empty)\t18`;
   processInput();
 }
 

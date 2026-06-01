@@ -9,7 +9,7 @@
 <body>
   <header class="hero">
     <div class="brand">
-      <img src="assets/logo-bayer.jpg" alt="Logo Bayer" />
+      <div class="labs-mark">IL</div>
       <div>
         <p class="eyebrow">Irina Labs</p>
         <h1>Lluvias, aplicaciones y assessments</h1>
@@ -30,6 +30,7 @@
 
       <div class="expected">
         <strong>Columnas esperadas:</strong>
+        <code>protocolo</code>
         <code>Trial_mod</code>
         <code>activity_date</code>
         <code>activity_description</code>
@@ -56,7 +57,7 @@
         </div>
       </div>
       <div class="toolbar">
-        <button id="downloadCsvBtn" class="secondary" disabled>Descargar CSV filtrado</button>
+        <button id="downloadXlsBtn" class="secondary" disabled>Descargar Excel filtrado</button>
       </div>
       <div id="summary" class="summary-grid"></div>
       <div class="table-wrap">
@@ -69,7 +70,7 @@
         <span>03</span>
         <div>
           <h2>Gráficos por localidad</h2>
-          <p>Barras de precipitación, líneas continuas para aplicaciones y líneas punteadas para assessments.</p>
+          <p>Exportables con estética Bayer: barras de precipitación, líneas continuas para aplicaciones y líneas punteadas para assessments.</p>
         </div>
       </div>
       <div id="charts" class="charts"></div>
@@ -77,7 +78,7 @@
   </main>
 
   <footer>
-    <span>Irina Labs · Bayer style · Local browser tool</span>
+    <span>Irina Labs · Local browser tool</span>
   </footer>
 
   <script src="app.js"></script>
