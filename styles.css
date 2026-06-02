@@ -233,3 +233,16 @@ footer {
   .labs-mark { width: 70px; height: 70px; border-radius: 20px; }
   canvas { height: 380px; }
 }
+
+.chart-box-featured {
+  border-color: rgba(0, 163, 224, .38);
+  box-shadow: 0 18px 45px rgba(0, 59, 113, .10);
+}
+.chart-kicker {
+  margin: 0 0 4px;
+  color: #00A3E0;
+  font-size: .72rem;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+}

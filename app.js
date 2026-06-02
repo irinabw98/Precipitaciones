@@ -16,6 +16,7 @@ const COLORS = {
   appFill: "#DDF3D0"
 };
 
+let allRows = [];
 let filteredRows = [];
 let groupedResult = new Map();
 
@@ -140,7 +141,7 @@ function processInput() {
     const missing = requiredKeys.filter(k => idx[k] === -1);
     if (missing.length) throw new Error("No pude reconocer estas columnas: " + missing.join(", "));
 
-    const rows = matrix.slice(1).map((r, i) => {
+    allRows = matrix.slice(1).map((r, i) => {
       const date = parseDateValue(r[idx.date]);
       const type = typeOfRow(r[idx.description]);
       return {
@@ -156,13 +157,13 @@ function processInput() {
       };
     }).filter(r => r.date);
 
-    groupedResult = buildWindows(rows);
+    groupedResult = buildWindows(allRows);
     filteredRows = Array.from(groupedResult.values()).flat();
     renderSummary(groupedResult, filteredRows);
     renderTable(filteredRows);
-    renderCharts(groupedResult);
+    renderCharts(groupedResult, allRows);
     els.downloadXlsBtn.disabled = filteredRows.length === 0;
-    els.status.textContent = `Listo: ${filteredRows.length} filas filtradas en ${groupedResult.size} localidades.`;
+    els.status.textContent = `Listo: ${filteredRows.length} filas filtradas en ${groupedResult.size} localidades. Se generó también el gráfico general con todas las lluvias y assessments cargados.`;
   } catch (err) {
     els.status.textContent = err.message;
     els.downloadXlsBtn.disabled = true;
@@ -241,8 +242,28 @@ function renderTable(rows) {
   els.resultTable.innerHTML = `<thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>${body}</tbody>`;
 }
 
-function renderCharts(groups) {
+function renderCharts(groups, sourceRows = []) {
   els.charts.innerHTML = "";
+
+  if (sourceRows.length) {
+    const globalBox = document.createElement("div");
+    globalBox.className = "chart-box chart-box-featured";
+    globalBox.innerHTML = `
+      <div class="chart-head">
+        <div>
+          <p class="chart-kicker">Resumen general</p>
+          <h3>Todas las lluvias, aplicaciones y assessments cargados</h3>
+        </div>
+        <button class="secondary">Descargar PNG Bayer general</button>
+      </div>
+      <canvas></canvas>
+    `;
+    els.charts.appendChild(globalBox);
+    const globalCanvas = globalBox.querySelector("canvas");
+    drawChart(globalCanvas, "Resumen general · Todas las lluvias y assessments", buildGeneralChartRows(sourceRows), { general: true });
+    globalBox.querySelector("button").addEventListener("click", () => downloadCanvas(globalCanvas, "grafico_general_todas_las_lluvias_assessments.png"));
+  }
+
   for (const [key, rows] of groups.entries()) {
     const locality = rows[0]?.locality || key.split("||")[1] || key;
     const protocol = rows[0]?.protocol || "";
@@ -263,7 +284,40 @@ function renderCharts(groups) {
   }
 }
 
-function drawChart(canvas, title, rows) {
+
+function buildGeneralChartRows(rows) {
+  const rainByDate = new Map();
+  const events = [];
+
+  rows.forEach(r => {
+    const dateKey = r.date.toISOString().slice(0, 10);
+    if (r.type === "Rain" && Number.isFinite(r.irrigation)) {
+      const current = rainByDate.get(dateKey) || {
+        ...r,
+        irrigation: 0,
+        description: "Rain",
+        type: "Rain",
+        code: "",
+        localities: new Set()
+      };
+      current.irrigation += r.irrigation;
+      current.localities.add(r.locality);
+      rainByDate.set(dateKey, current);
+    } else if (r.type === "Application" || r.type === "Assessment") {
+      events.push({ ...r });
+    }
+  });
+
+  const rains = [...rainByDate.values()].map(r => ({
+    ...r,
+    code: r.localities.size > 1 ? `${r.localities.size} loc.` : "",
+    dateLabel: formatDate(r.date)
+  }));
+
+  return [...rains, ...events].sort((a, b) => a.date - b.date || a.originalIndex - b.originalIndex);
+}
+
+function drawChart(canvas, title, rows, options = {}) {
   const dpr = window.devicePixelRatio || 1;
   const cssWidth = canvas.clientWidth || 980;
   const cssHeight = canvas.clientHeight || 460;
@@ -279,9 +333,12 @@ function drawChart(canvas, title, rows) {
   const plotH = H - m.top - m.bottom;
   const minT = Math.min(...rows.map(r => r.date.getTime()));
   const maxT = Math.max(...rows.map(r => r.date.getTime()));
-  const span = Math.max(maxT - minT, 86400000);
+  const rawSpan = Math.max(maxT - minT, 86400000);
+  const visualSpan = rawSpan;
+  const span = visualSpan;
   const rains = rows.filter(r => r.type === "Rain" && Number.isFinite(r.irrigation));
-  const maxY = Math.max(10, ...rains.map(r => r.irrigation)) * 1.24;
+  const maxRain = Math.max(0, ...rains.map(r => r.irrigation));
+  const maxY = getNiceMaxY(maxRain);
   const x = date => m.left + ((date.getTime() - minT) / span) * plotW;
   const y = v => m.top + plotH - (v / maxY) * plotH;
 
@@ -330,7 +387,7 @@ function drawChart(canvas, title, rows) {
   ctx.stroke();
 
   const minSpacing = getMinSpacing(rains.map(r => x(r.date)));
-  const barWidth = Math.max(5, Math.min(16, minSpacing * 0.45, plotW / Math.max(rains.length, 18) * 0.55));
+  const barWidth = getBarWidth(rains.length, minSpacing, plotW);
   rains.forEach((r, i) => {
     const xx = x(r.date) - barWidth / 2;
     const yy = y(r.irrigation);
@@ -357,11 +414,30 @@ function drawChart(canvas, title, rows) {
   ctx.fillText("Fecha", m.left + plotW / 2, H - 22);
 }
 
+
+function getNiceMaxY(maxValue) {
+  if (!Number.isFinite(maxValue) || maxValue <= 0) return 5;
+  const padded = maxValue * 1.18;
+  if (padded <= 3) return 3;
+  if (padded <= 5) return 5;
+  if (padded <= 10) return 10;
+  if (padded <= 20) return 20;
+  if (padded <= 50) return Math.ceil(padded / 5) * 5;
+  return Math.ceil(padded / 10) * 10;
+}
+
 function getMinSpacing(values) {
   const sorted = [...values].sort((a, b) => a - b);
   let min = Infinity;
   for (let i = 1; i < sorted.length; i++) min = Math.min(min, sorted[i] - sorted[i - 1]);
   return Number.isFinite(min) && min > 0 ? min : 42;
+}
+
+function getBarWidth(count, minSpacing, plotW) {
+  if (count <= 1) return 34;
+  if (count <= 3) return Math.max(24, Math.min(38, minSpacing * 0.55));
+  if (count <= 7) return Math.max(18, Math.min(32, minSpacing * 0.50));
+  return Math.max(9, Math.min(24, minSpacing * 0.42, plotW / Math.max(count, 10) * 0.65));
 }
 
 function drawVerticalEvent(ctx, xx, m, plotH, color, dashed, label, index) {
@@ -482,6 +558,7 @@ function clearAll() {
   els.summary.innerHTML = "";
   els.charts.innerHTML = "";
   els.downloadXlsBtn.disabled = true;
+  allRows = [];
   filteredRows = [];
   groupedResult = new Map();
 }

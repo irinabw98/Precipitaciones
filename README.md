@@ -3,9 +3,18 @@
 Herramienta web estática para pegar una tabla de actividades por localidad y generar:
 
 - una tabla filtrada desde la lluvia previa a la primera aplicación hasta la lluvia posterior a la última aplicación de cada localidad;
+- un gráfico general en PNG con todas las lluvias cargadas, aplicaciones y assessments;
 - gráficos por localidad con barras de precipitación/irrigación, líneas continuas para aplicaciones y líneas punteadas para assessments;
 - descarga del resultado filtrado en CSV;
 - descarga individual de cada gráfico en PNG.
+
+## Cambios de esta versión
+
+- Se agrega un gráfico general al inicio de la sección de gráficos.
+- El gráfico general toma todas las lluvias cargadas en la tabla original y agrega las lluvias de una misma fecha para evitar barras superpuestas.
+- También incluye las aplicaciones y assessments detectados, con la misma codificación visual que los gráficos por localidad.
+- Las barras de lluvia son más gruesas cuando hay pocos registros.
+- El eje Y se ajusta mejor al máximo real de precipitación para evitar gráficos con mucho espacio vacío.
 
 ## Columnas esperadas
 
